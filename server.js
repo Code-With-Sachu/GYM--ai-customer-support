@@ -456,16 +456,40 @@ ${context || 'No strongly relevant IRONFORGE knowledge was retrieved.'}
       }
     ];
 
-    const response =
-      await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents,
-        config: {
-          systemInstruction: instructions,
-          maxOutputTokens: 500,
+    let response;
 
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        response = await gemini.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents,
+          config: {
+            systemInstruction: instructions,
+            maxOutputTokens: 500
+          }
+        });
+
+        break;
+      } catch (error) {
+        const status = error?.status || error?.code || error?.response?.status;
+        const isTemporary =
+          status === 503 ||
+          status === 429 ||
+          String(error?.message || '').includes('503') ||
+          String(error?.message || '').includes('429');
+
+        if (!isTemporary || attempt === 3) {
+          throw error;
         }
-      });
+
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 8000);
+        console.log(
+          `?? Gemini temporarily unavailable. Retry ${attempt}/3 in ${delay}ms...`
+        );
+
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
 
     const answer =
       response.text ||
@@ -542,5 +566,6 @@ app.listen(port, '0.0.0.0', () => {
 
   console.log('======================================');
 });
+
 
 
