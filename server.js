@@ -514,7 +514,7 @@ app.use((_req, res) => {
 // START SERVER
 // ========================================
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log('');
   console.log('======================================');
   console.log(' IRONFORGE AI CUSTOMER SUPPORT');
