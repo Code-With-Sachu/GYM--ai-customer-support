@@ -1,0 +1,17 @@
+{
+  "name": "ironforge-ai-customer-support",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.24.0",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "latest",
+    "express": "latest",
+    "openai": "latest",
+    "pdf-parse": "^2.4.5"
+  }
+}
