@@ -170,7 +170,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     aiConfigured: Boolean(gemini),
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.8-flash',
     ragConfigured: Boolean(db),
     ragChunks: chunks
   });
@@ -458,12 +458,12 @@ ${context || 'No strongly relevant IRONFORGE knowledge was retrieved.'}
 
     const response =
       await gemini.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents,
         config: {
           systemInstruction: instructions,
           maxOutputTokens: 500,
-          temperature: 0.3
+
         }
       });
 
@@ -542,3 +542,5 @@ app.listen(port, '0.0.0.0', () => {
 
   console.log('======================================');
 });
+
+
