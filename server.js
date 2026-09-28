@@ -37,16 +37,16 @@ let db = null;
 try {
   db = new Database(DB_FILE);
 
-  console.log('✅ RAG database connected');
+  console.log('? RAG database connected');
 
   const count = db
     .prepare('SELECT COUNT(*) AS count FROM documents')
     .get();
 
-  console.log(`📚 RAG chunks available: ${count.count}`);
+  console.log(`?? RAG chunks available: ${count.count}`);
 } catch (error) {
   console.error(
-    '❌ Could not open RAG database:',
+    '? Could not open RAG database:',
     error.message
   );
 }
@@ -204,21 +204,237 @@ app.post('/api/chat', async (req, res) => {
   }
 
   try {
+
     // ========================================
-    // SEARCH IRONFORGE KNOWLEDGE
+    // DECIDE WHETHER RAG SHOULD BE USED
     // ========================================
+
+    const lowerMessage =
+      message.toLowerCase();
+
+    // ----------------------------------------
+    // IRONFORGE-SPECIFIC TERMS
+    // ----------------------------------------
+
+    const ironforgeTerms = [
+      'ironforge',
+      'iron forge',
+
+      'membership',
+      'member',
+      'membership plan',
+      'membership plans',
+      'membership price',
+      'membership prices',
+
+      'gym plan',
+      'gym plans',
+
+      'training program',
+      'training programs',
+      'program',
+      'programs',
+
+      'trainer',
+      'trainers',
+      'personal trainer',
+      'personal training',
+
+      'coach',
+      'coaches',
+      'coaching',
+
+      'opening hours',
+      'opening time',
+      'opening times',
+      'hours',
+      'timings',
+      'gym hours',
+
+      'location',
+      'address',
+
+      'contact',
+      'contact details',
+      'phone',
+      'phone number',
+      'email',
+
+      'facility',
+      'facilities',
+      'equipment',
+
+      'class',
+      'classes',
+
+      'policy',
+      'policies',
+
+      'getting started',
+      'start membership',
+      'join the gym',
+      'joining the gym',
+
+      'gym access'
+    ];
+
+    // ----------------------------------------
+    // GENERAL TOPICS THAT MUST NOT TRIGGER
+    // IRONFORGE RAG
+    // ----------------------------------------
+
+    const generalTopicTerms = [
+      'protein',
+      'whey',
+      'casein',
+      'creatine',
+      'pre workout',
+      'pre-workout',
+      'supplement',
+      'supplements',
+      'amino acid',
+      'amino acids',
+
+      'muscle growth',
+      'muscle gain',
+      'fat loss',
+      'weight loss',
+      'weight gain',
+      'calorie',
+      'calories',
+      'macros',
+      'carbohydrate',
+      'carbs',
+      'fat',
+      'fats',
+
+      'workout',
+      'exercise',
+      'exercises',
+      'chest exercise',
+      'back exercise',
+      'leg exercise',
+      'shoulder exercise',
+      'biceps',
+      'triceps',
+
+      'progressive overload',
+
+      'html',
+      'css',
+      'javascript',
+      'python',
+      'java',
+      'c',
+      'c++',
+      'sql',
+      'programming',
+      'coding',
+
+      'ai',
+      'artificial intelligence',
+      'machine learning',
+      'technology',
+      'computer'
+    ];
+
+    const isIronforgeQuestion =
+      ironforgeTerms.some(term =>
+        lowerMessage.includes(term)
+      );
+
+    const isGeneralTopic =
+      generalTopicTerms.some(term =>
+        lowerMessage.includes(term)
+      );
+
+    // ----------------------------------------
+    // SPECIAL PROTEIN CHECK
+    // ----------------------------------------
+    //
+    // "protein" must NEVER be confused with
+    // "PRO" membership.
+    //
+    // Example:
+    //
+    // "Which is the best protein?"
+    //       -> GENERAL
+    //
+    // "Which protein is best for muscle growth?"
+    //       -> GENERAL
+    //
+    // "What is the PRO membership?"
+    //       -> IRONFORGE
+    //
+    // ----------------------------------------
+
+    const isProteinQuestion =
+      /\bprotein\b/i.test(message);
+
+    // ----------------------------------------
+    // FINAL RAG DECISION
+    // ----------------------------------------
+
+    const useRag =
+      isIronforgeQuestion &&
+      !isGeneralTopic &&
+      !isProteinQuestion;
 
     console.log('');
     console.log(
-      `🔎 Searching IRONFORGE RAG: "${message}"`
+      `?? User question: "${message}"`
     );
-
-    const results =
-      await searchKnowledge(message, 5);
 
     console.log(
-      `📚 Retrieved ${results.length} chunks`
+      `?? RAG routing: ${
+        useRag
+          ? 'IRONFORGE'
+          : 'GENERAL'
+      }`
     );
+
+    // ========================================
+    // RAG SEARCH
+    // ========================================
+    //
+    // IMPORTANT:
+    //
+    // RAG SEARCH ONLY HAPPENS WHEN THE QUESTION
+    // IS ACTUALLY ABOUT IRONFORGE.
+    //
+    // This prevents:
+    //
+    // protein
+    // creatine
+    // Python
+    // AI
+    // exercise
+    //
+    // from retrieving unrelated IRONFORGE chunks.
+    // ========================================
+
+    let results = [];
+
+    if (useRag) {
+
+      console.log(
+        '?? Searching IRONFORGE knowledge base...'
+      );
+
+      results =
+        await searchKnowledge(message, 5);
+
+      console.log(
+        `?? Retrieved ${results.length} IRONFORGE chunks`
+      );
+
+    } else {
+
+      console.log(
+        '?? General question � RAG search skipped'
+      );
+
+    }
 
     // ========================================
     // CHECK RAG RELEVANCE
@@ -230,7 +446,7 @@ app.post('/api/chat', async (req, res) => {
         : 0;
 
     console.log(
-      `🎯 Best RAG relevance: ${bestScore.toFixed(4)}`
+      `?? Best RAG relevance: ${bestScore.toFixed(4)}`
     );
 
     // ========================================
@@ -239,7 +455,11 @@ app.post('/api/chat', async (req, res) => {
 
     let context = '';
 
-    if (results.length > 0) {
+    if (
+      useRag &&
+      results.length > 0
+    ) {
+
       context = results
         .map((result, index) => {
           return `
@@ -253,31 +473,37 @@ ${result.content}
         .join(
           '\n-----------------------------\n'
         );
+
     }
 
     // ========================================
     // SAFE CHAT HISTORY
     // ========================================
 
-    const safeHistory = history
-      .filter(
-        item =>
-          item &&
-          (item.role === 'user' ||
-            item.role === 'assistant') &&
-          typeof item.content === 'string'
-      )
-      .map(item => ({
-        role:
-          item.role === 'user'
-            ? 'user'
-            : 'model',
-        parts: [
-          {
-            text: item.content.slice(0, 2000)
-          }
-        ]
-      }));
+    const safeHistory =
+      history
+        .filter(
+          item =>
+            item &&
+            (
+              item.role === 'user' ||
+              item.role === 'assistant'
+            ) &&
+            typeof item.content === 'string'
+        )
+        .map(item => ({
+          role:
+            item.role === 'user'
+              ? 'user'
+              : 'model',
+
+          parts: [
+            {
+              text:
+                item.content.slice(0, 2000)
+            }
+          ]
+        }));
 
     // ========================================
     // AI INSTRUCTIONS
@@ -294,9 +520,9 @@ You also have access to the official IRONFORGE FITNESS knowledge base.
 IRONFORGE KNOWLEDGE RULES
 ==================================================
 
-When the user asks about IRONFORGE FITNESS, use the
-retrieved IRONFORGE knowledge as the authoritative
-source.
+When the user's question is specifically about
+IRONFORGE FITNESS, use the retrieved IRONFORGE
+knowledge as the authoritative source.
 
 Examples:
 
@@ -326,13 +552,15 @@ facilities, policies, or services.
 GENERAL KNOWLEDGE
 ==================================================
 
-For general questions that are not specifically about
-IRONFORGE FITNESS, you may answer using your general
+For general questions that are NOT specifically
+about IRONFORGE FITNESS, answer using your general
 knowledge.
 
 Examples:
 
 - What is protein?
+- Which protein is best?
+- Which whey protein is best?
 - What is creatine?
 - What is progressive overload?
 - How does muscle growth work?
@@ -345,7 +573,56 @@ Examples:
 - General technology questions
 - General fitness questions
 
-Give clear, useful and understandable answers.
+IMPORTANT:
+
+The word "protein" refers to nutrition unless the
+user explicitly connects it to IRONFORGE FITNESS.
+
+Do NOT interpret "protein" as "PRO membership".
+
+For example:
+
+User:
+"Which is the best protein?"
+
+This is a GENERAL FITNESS/NUTRITION question.
+
+Do NOT answer with:
+
+"PRO is $59/month."
+
+Instead, answer the protein question normally.
+
+==================================================
+PRO MEMBERSHIP VS PROTEIN
+==================================================
+
+"PRO membership" or "IRONFORGE PRO" refers to an
+IRONFORGE membership plan.
+
+"protein" refers to nutrition.
+
+These are completely different concepts.
+
+Never confuse:
+
+PRO
+
+with:
+
+protein
+
+If the user asks:
+
+"What is the PRO membership?"
+
+Use IRONFORGE knowledge.
+
+If the user asks:
+
+"Which protein is best?"
+
+Answer the general nutrition question.
 
 ==================================================
 MIXED QUESTIONS
@@ -437,7 +714,10 @@ to the user.
 CURRENT RETRIEVED IRONFORGE KNOWLEDGE
 ==================================================
 
-${context || 'No strongly relevant IRONFORGE knowledge was retrieved.'}
+${
+  context ||
+  'No IRONFORGE knowledge is being used for this question.'
+}
 `;
 
     // ========================================
@@ -445,9 +725,11 @@ ${context || 'No strongly relevant IRONFORGE knowledge was retrieved.'}
     // ========================================
 
     const contents = [
-      ...safeHistory,
+      ...(useRag ? safeHistory : []),
+
       {
         role: 'user',
+
         parts: [
           {
             text: message
@@ -458,38 +740,81 @@ ${context || 'No strongly relevant IRONFORGE knowledge was retrieved.'}
 
     let response;
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // ========================================
+    // GEMINI RETRY
+    // ========================================
+
+    for (
+      let attempt = 1;
+      attempt <= 3;
+      attempt++
+    ) {
+
       try {
-        response = await gemini.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents,
-          config: {
-            systemInstruction: instructions,
-            maxOutputTokens: 500
-          }
-        });
+
+        response =
+          await gemini.models.generateContent({
+            model: 'gemini-3.8-flash',
+
+            contents,
+
+            config: {
+              systemInstruction:
+                instructions,
+
+              maxOutputTokens: 500
+            }
+          });
 
         break;
+
       } catch (error) {
-        const status = error?.status || error?.code || error?.response?.status;
+
+        const status =
+          error?.status ||
+          error?.code ||
+          error?.response?.status;
+
         const isTemporary =
           status === 503 ||
           status === 429 ||
-          String(error?.message || '').includes('503') ||
-          String(error?.message || '').includes('429');
+          String(
+            error?.message || ''
+          ).includes('503') ||
+          String(
+            error?.message || ''
+          ).includes('429');
 
-        if (!isTemporary || attempt === 3) {
+        if (
+          !isTemporary ||
+          attempt === 3
+        ) {
           throw error;
         }
 
-        const delay = Math.min(1000 * 2 ** (attempt - 1), 8000);
+        const delay =
+          Math.min(
+            1000 * 2 ** (attempt - 1),
+            8000
+          );
+
         console.log(
-          `?? Gemini temporarily unavailable. Retry ${attempt}/3 in ${delay}ms...`
+          `Gemini temporarily unavailable. Retry ${attempt}/3 in ${delay}ms...`
         );
 
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise(
+          resolve =>
+            setTimeout(
+              resolve,
+              delay
+            )
+        );
       }
     }
+
+    // ========================================
+    // AI ANSWER
+    // ========================================
 
     const answer =
       response.text ||
@@ -500,26 +825,40 @@ ${context || 'No strongly relevant IRONFORGE knowledge was retrieved.'}
     // ========================================
 
     res.json({
+
       answer,
-      sources: results
-        .filter(result => result.score > 0.45)
-        .map(result => ({
-          file: result.source,
-          score: Number(
-            result.score.toFixed(4)
-          )
-        }))
+
+      // Only return sources when RAG was actually
+      // used for this question.
+      sources: useRag
+        ? results
+            .filter(
+              result =>
+                result.score > 0.45
+            )
+            .map(result => ({
+              file: result.source,
+
+              score: Number(
+                result.score.toFixed(4)
+              )
+            }))
+        : []
+
     });
 
   } catch (error) {
+
     console.error('');
+
     console.error(
-      '❌ Gemini/RAG error:',
+      '? Gemini/RAG error:',
       error?.message || error
     );
 
     res.status(502).json({
-      error: 'AI service request failed.'
+      error:
+        'AI service request failed.'
     });
   }
 });
@@ -529,43 +868,66 @@ ${context || 'No strongly relevant IRONFORGE knowledge was retrieved.'}
 // ========================================
 
 app.use((_req, res) => {
+
   res.sendFile(
-    path.join(__dirname, 'index.html')
+    path.join(
+      __dirname,
+      'index.html'
+    )
   );
+
 });
 
 // ========================================
 // START SERVER
 // ========================================
 
-app.listen(port, '0.0.0.0', () => {
-  console.log('');
-  console.log('======================================');
-  console.log(' IRONFORGE AI CUSTOMER SUPPORT');
-  console.log('======================================');
+app.listen(
+  port,
+  '0.0.0.0',
+  () => {
 
-  console.log(
-    `🌐 Website: http://localhost:${port}`
-  );
+    console.log('');
 
-  console.log(
-    `🤖 Gemini: ${
-      gemini
-        ? 'configured'
-        : 'NOT configured'
-    }`
-  );
+    console.log(
+      '======================================'
+    );
 
-  console.log(
-    `📚 RAG: ${
-      db
-        ? 'connected'
-        : 'NOT connected'
-    }`
-  );
+    console.log(
+      ' IRONFORGE AI CUSTOMER SUPPORT'
+    );
 
-  console.log('======================================');
-});
+    console.log(
+      '======================================'
+    );
+
+    console.log(
+      `?? Website: http://localhost:${port}`
+    );
+
+    console.log(
+      `?? Gemini: ${
+        gemini
+          ? 'configured'
+          : 'NOT configured'
+      }`
+    );
+
+    console.log(
+      `?? RAG: ${
+        db
+          ? 'connected'
+          : 'NOT connected'
+      }`
+    );
+
+    console.log(
+      '======================================'
+    );
+
+  }
+);
+
 
 
 
